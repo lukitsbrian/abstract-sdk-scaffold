@@ -44,7 +44,7 @@ var (
 	}
 )
 
-type NewApp struct {
+type MyApp struct {
 	*bam.BaseApp
 	cdc *codec.Codec
 
@@ -67,34 +67,24 @@ type NewApp struct {
 	sm *module.SimulationManager
 }
 
-var _ simapp.App = (*NewApp)(nil)
+var _ simapp.App = (*MyApp)(nil)
 
 func NewInitApp(
 	logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool,
 	invCheckPeriod uint, baseAppOptions ...func(*bam.BaseApp),
-) *NewApp {
-	cdc := MakeCodec()
+) *MyApp {
 
-	bApp := bam.NewBaseApp(appName, logger, db, auth.DefaultTxDecoder(cdc), baseAppOptions...)
-	bApp.SetCommitMultiStoreTracer(traceStore)
-	bApp.SetAppVersion(version.Version)
-
-	// Create app
-	var app = &NewApp{
-		BaseApp:        bApp,
-		cdc:            cdc,
-		invCheckPeriod: invCheckPeriod,
-		subspaces:      make(map[string]params.Subspace),
+	customKVStoreKeys := []string{
+		blogtypes.StoreKey,
 	}
 
-	// load keys
+	customTStoreKeys := []string{}
 
-	app.keys = loadKVStoreKeys(
-		blogtypes.StoreKey,
-		// this line is used by starport scaffolding # 5
-	)
+	// Create app
+	var app = &MyApp{}
 
-	app.tKeys = sdk.NewTransientStoreKeys(staking.TStoreKey, params.TStoreKey)
+	app.Init(logger, db, traceStore, loadLatest, invCheckPeriod, baseAppOptions...)
+	app.loadKeys(customKVStoreKeys, customTStoreKeys)
 
 	// load keepers
 	app.loadDefaultKeepers()
@@ -127,20 +117,9 @@ func NewInitApp(
 
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter())
 
-	app.SetInitChainer(app.InitChainer)
-	app.SetBeginBlocker(app.BeginBlocker)
-	app.SetEndBlocker(app.EndBlocker)
+	app.Setup()
 
-	app.SetAnteHandler(
-		auth.NewAnteHandler(
-			app.accountKeeper,
-			app.supplyKeeper,
-			auth.DefaultSigVerificationGasConsumer,
-		),
-	)
-
-	app.MountKVStores(app.keys)
-	app.MountTransientStores(app.tKeys)
+	app.Mount()
 
 	if loadLatest {
 		err := app.LoadLatestVersion(app.keys[bam.MainStoreKey])
@@ -152,7 +131,7 @@ func NewInitApp(
 	return app
 }
 
-func (app *NewApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
+func (app *MyApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
 	var genesisState simapp.GenesisState
 
 	app.cdc.MustUnmarshalJSON(req.AppStateBytes, &genesisState)
@@ -160,19 +139,19 @@ func (app *NewApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.
 	return app.mm.InitGenesis(ctx, genesisState)
 }
 
-func (app *NewApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
+func (app *MyApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
 	return app.mm.BeginBlock(ctx, req)
 }
 
-func (app *NewApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
+func (app *MyApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
 	return app.mm.EndBlock(ctx, req)
 }
 
-func (app *NewApp) LoadHeight(height int64) error {
+func (app *MyApp) LoadHeight(height int64) error {
 	return app.LoadVersion(height, app.keys[bam.MainStoreKey])
 }
 
-func (app *NewApp) ModuleAccountAddrs() map[string]bool {
+func (app *MyApp) ModuleAccountAddrs() map[string]bool {
 	modAccAddrs := make(map[string]bool)
 	for acc := range maccPerms {
 		modAccAddrs[supply.NewModuleAddress(acc).String()] = true
@@ -181,11 +160,11 @@ func (app *NewApp) ModuleAccountAddrs() map[string]bool {
 	return modAccAddrs
 }
 
-func (app *NewApp) Codec() *codec.Codec {
+func (app *MyApp) Codec() *codec.Codec {
 	return app.cdc
 }
 
-func (app *NewApp) SimulationManager() *module.SimulationManager {
+func (app *MyApp) SimulationManager() *module.SimulationManager {
 	return app.sm
 }
 
@@ -195,4 +174,36 @@ func GetMaccPerms() map[string][]string {
 		modAccPerms[k] = v
 	}
 	return modAccPerms
+}
+
+func (app *MyApp) Init(logger log.Logger, db dbm.DB, traceStore io.Writer, loadLatest bool,
+	invCheckPeriod uint, baseAppOptions ...func(*bam.BaseApp)) {
+	cdc := MakeCodec()
+
+	bApp := bam.NewBaseApp(appName, logger, db, auth.DefaultTxDecoder(cdc), baseAppOptions...)
+	bApp.SetCommitMultiStoreTracer(traceStore)
+	bApp.SetAppVersion(version.Version)
+	app.BaseApp = bApp
+	app.cdc = cdc
+	app.invCheckPeriod = invCheckPeriod
+	app.subspaces = make(map[string]params.Subspace)
+}
+
+func (app *MyApp) Setup() {
+	app.SetInitChainer(app.InitChainer)
+	app.SetBeginBlocker(app.BeginBlocker)
+	app.SetEndBlocker(app.EndBlocker)
+
+	app.SetAnteHandler(
+		auth.NewAnteHandler(
+			app.accountKeeper,
+			app.supplyKeeper,
+			auth.DefaultSigVerificationGasConsumer,
+		),
+	)
+}
+
+func (app *MyApp) Mount() {
+	app.MountKVStores(app.keys)
+	app.MountTransientStores(app.tKeys)
 }

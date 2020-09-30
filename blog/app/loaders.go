@@ -12,6 +12,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/supply"
 )
 
+func (app *MyApp) loadKeys(storeKeys []string, tStoreKeys []string) {
+	app.keys = loadKVStoreKeys(storeKeys...)
+	app.tKeys = loadTransientStoreKeys(tStoreKeys...)
+}
+
 func loadKVStoreKeys(keys ...string) map[string]*sdk.KVStoreKey {
 	defaultKeys := []string{
 		bam.MainStoreKey,
@@ -24,6 +29,17 @@ func loadKVStoreKeys(keys ...string) map[string]*sdk.KVStoreKey {
 		defaultKeys = append(defaultKeys, key)
 	}
 	return sdk.NewKVStoreKeys(defaultKeys...)
+}
+
+func loadTransientStoreKeys(keys ...string) map[string]*sdk.TransientStoreKey {
+	defaultKeys := []string{
+		staking.TStoreKey,
+		params.TStoreKey,
+	}
+	for _, key := range keys {
+		defaultKeys = append(defaultKeys, key)
+	}
+	return sdk.NewTransientStoreKeys(defaultKeys...)
 }
 
 func loadModules(modules ...module.AppModuleBasic) module.BasicManager {
@@ -43,7 +59,7 @@ func loadModules(modules ...module.AppModuleBasic) module.BasicManager {
 	return module.NewBasicManager(moduleImports...)
 }
 
-func (app *NewApp) loadCustomManagers(managers ...module.AppModule) {
+func (app *MyApp) loadCustomManagers(managers ...module.AppModule) {
 	// These are defaults
 	managerImports := []module.AppModule{
 		genutil.NewAppModule(app.accountKeeper, app.stakingKeeper, app.BaseApp.DeliverTx),
@@ -59,8 +75,8 @@ func (app *NewApp) loadCustomManagers(managers ...module.AppModule) {
 	app.mm = module.NewManager(managerImports...)
 }
 
-// func (app *NewApp) loadDefaultKeepers(keys map[string]*sdk.KVStoreKey, tKeys map[string]*sdk.TransientStoreKey) {
-func (app *NewApp) loadDefaultKeepers() {
+// func (app *MyApp) loadDefaultKeepers(keys map[string]*sdk.KVStoreKey, tKeys map[string]*sdk.TransientStoreKey) {
+func (app *MyApp) loadDefaultKeepers() {
 	app.paramsKeeper = params.NewKeeper(app.cdc, app.keys[params.StoreKey], app.tKeys[params.TStoreKey])
 	app.subspaces[auth.ModuleName] = app.paramsKeeper.Subspace(auth.DefaultParamspace)
 	app.subspaces[bank.ModuleName] = app.paramsKeeper.Subspace(bank.DefaultParamspace)
